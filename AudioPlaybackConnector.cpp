@@ -688,6 +688,8 @@ winrt::Windows::Foundation::IAsyncOperation<DeviceInformation> FindAudioRenderDe
 // Find the A2DP audio input device for a connected Bluetooth device
 winrt::Windows::Foundation::IAsyncOperation<DeviceInformation> FindA2dpInputDevice(std::wstring_view bluetoothDeviceName)
 {
+	constexpr std::wstring_view A2DP_DEVICE_IDENTIFIER = L"A2DP";
+	
 	auto selector = winrt::Windows::Media::Devices::MediaDevice::GetAudioCaptureSelector();
 	auto devices = co_await DeviceInformation::FindAllAsync(selector);
 	
@@ -695,7 +697,7 @@ winrt::Windows::Foundation::IAsyncOperation<DeviceInformation> FindA2dpInputDevi
 	{
 		std::wstring name(device.Name());
 		// A2DP devices typically have "A2DP SNK" in their name
-		if (name.find(L"A2DP") != std::wstring::npos || name.find(bluetoothDeviceName) != std::wstring::npos)
+		if (name.find(A2DP_DEVICE_IDENTIFIER) != std::wstring::npos || name.find(bluetoothDeviceName) != std::wstring::npos)
 		{
 			co_return device;
 		}
@@ -706,6 +708,8 @@ winrt::Windows::Foundation::IAsyncOperation<DeviceInformation> FindA2dpInputDevi
 // Set up audio routing from A2DP input device to the configured output device
 winrt::fire_and_forget SetupAudioRouting(std::wstring deviceId, std::wstring deviceName)
 {
+	constexpr auto A2DP_DEVICE_READY_DELAY = std::chrono::milliseconds(1000);
+	
 	// Only set up routing if a custom output device is configured
 	if (g_audioOutputDevice.empty())
 	{
@@ -715,7 +719,7 @@ winrt::fire_and_forget SetupAudioRouting(std::wstring deviceId, std::wstring dev
 	try
 	{
 		// Small delay to allow the A2DP virtual device to become available
-		co_await winrt::resume_after(std::chrono::milliseconds(1000));
+		co_await winrt::resume_after(A2DP_DEVICE_READY_DELAY);
 
 		// Find the A2DP input device
 		auto inputDevice = co_await FindA2dpInputDevice(deviceName);
@@ -834,6 +838,8 @@ winrt::fire_and_forget ListAudioDevices()
 
 		message += L"\nTo set output device, add to AudioPlaybackConnector.json:\n";
 		message += L"\"audioOutputDevice\": \"<device name or partial name>\"\n";
+		message += L"\nExample:\n";
+		message += L"\"audioOutputDevice\": \"Speakers (Realtek Audio)\"\n";
 
 		MessageBoxW(nullptr, message.c_str(), L"AudioPlaybackConnector - Available Audio Devices", MB_OK | MB_ICONINFORMATION);
 	}
