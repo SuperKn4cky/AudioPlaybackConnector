@@ -384,6 +384,8 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 						g_devicePicker.SetDisplayStatus(it->second.first, {}, DevicePickerDisplayStatusOptions::None);
 						g_audioPlaybackConnections.erase(it);
 					}
+					// Note: sender.Close() removed here as it's already closed when state is Closed
+					// Calling Close() again could cause issues. Cleanup happens via erase above.
 					UpdateNotifyIcon();
 				}
 			});
@@ -527,20 +529,19 @@ void UpdateNotifyIcon()
 
 bool GetStartupStatus()
 {
-	wchar_t pFileName[MAX_PATH] = { 0 };
-	GetModuleFileNameW(NULL, pFileName, MAX_PATH);
+	auto exePath = GetModuleFsPath(g_hInst);
 
 	HKEY hKey;
 	if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_READ, &hKey) == ERROR_SUCCESS)
 	{
-		DWORD pathLength = MAX_PATH;
+		DWORD pathLength = MAX_PATH * sizeof(wchar_t);
 		wchar_t storedPath[MAX_PATH] = { 0 };
 		DWORD type = REG_SZ;
 		LSTATUS result = RegQueryValueExW(hKey, L"AudioPlaybackConnector", 0, &type, (LPBYTE)storedPath, &pathLength);
 
 		RegCloseKey(hKey);
 
-		if (result == ERROR_SUCCESS && type == REG_SZ && StrCmpW(pFileName, storedPath) == 0)
+		if (result == ERROR_SUCCESS && type == REG_SZ && exePath == storedPath)
 		{
 			return true;
 		}
@@ -551,15 +552,15 @@ bool GetStartupStatus()
 
 void SetStartupStatus(bool status)
 {
-	wchar_t pFileName[MAX_PATH] = { 0 };
-	GetModuleFileNameW(NULL, pFileName, MAX_PATH);
+	auto exePath = GetModuleFsPath(g_hInst);
 
 	HKEY hKey;
 	if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_WRITE, &hKey) == ERROR_SUCCESS)
 	{
 		if (status)
 		{
-			LSTATUS stat = RegSetValueExW(hKey, L"AudioPlaybackConnector", 0, REG_SZ, (LPBYTE)pFileName, (lstrlenW(pFileName) + 1) * sizeof(wchar_t));
+			auto exePathStr = exePath.wstring();
+			LSTATUS stat = RegSetValueExW(hKey, L"AudioPlaybackConnector", 0, REG_SZ, (LPBYTE)exePathStr.c_str(), (lstrlenW(exePathStr.c_str()) + 1) * sizeof(wchar_t));
 			if (stat != ERROR_SUCCESS)
 			{
 				RegCloseKey(hKey);
