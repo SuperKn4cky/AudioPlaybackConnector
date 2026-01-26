@@ -9,6 +9,8 @@ using namespace winrt::Windows::Media::Audio;
 using namespace winrt::Windows::UI::Xaml;
 using namespace winrt::Windows::UI::Xaml::Controls;
 using namespace winrt::Windows::UI::Xaml::Hosting;
+using namespace winrt::Windows::UI::Notifications;
+using namespace winrt::Windows::Data::Xml::Dom;
 namespace fs = std::filesystem;
 
 constexpr UINT WM_NOTIFYICON = WM_APP + 1;
@@ -36,6 +38,7 @@ NOTIFYICONIDENTIFIER g_niid = {
 };
 UINT WM_TASKBAR_CREATED = 0;
 bool g_reconnect = false;
+bool g_showNotification = true;
 std::vector<std::wstring> g_lastDevices;
 
 #include "Util.hpp"

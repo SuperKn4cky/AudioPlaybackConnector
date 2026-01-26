@@ -10,6 +10,7 @@ void SetupSvgIcon();
 void UpdateNotifyIcon();
 bool GetStartupStatus();
 void SetStartupStatus(bool status);
+void ShowInitialToastNotification();
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	_In_opt_ HINSTANCE hPrevInstance,
@@ -90,6 +91,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	LOG_LAST_ERROR_IF(WM_TASKBAR_CREATED == 0);
 
 	PostMessageW(g_hWnd, WM_CONNECTDEVICE, 0, 0);
+
+	if (g_showNotification)
+	{
+		ShowInitialToastNotification();
+	}
 
 	MSG msg;
 	while (GetMessageW(&msg, nullptr, 0, 0))
@@ -275,6 +281,29 @@ void SetupMenu()
 		}
 	});
 
+	FontIcon notificationCheckedIcon, notificationUncheckedIcon;
+	notificationCheckedIcon.Glyph(L"\xE73E");
+
+	MenuFlyoutItem notificationItem;
+	notificationItem.Text(_(L"Show startup notification"));
+	if (g_showNotification) {
+		notificationItem.Icon(notificationCheckedIcon);
+	}
+	else {
+		notificationItem.Icon(notificationUncheckedIcon);
+	}
+	notificationItem.Click([notificationCheckedIcon, notificationUncheckedIcon](const auto& sender, const auto&) {
+		MenuFlyoutItem self = sender.as<MenuFlyoutItem>();
+		g_showNotification = !g_showNotification;
+		if (g_showNotification) {
+			self.Icon(notificationCheckedIcon);
+		}
+		else {
+			self.Icon(notificationUncheckedIcon);
+		}
+		SaveSettings();
+	});
+
 	FontIcon closeIcon;
 	closeIcon.Glyph(L"\xE8BB");
 
@@ -308,6 +337,7 @@ void SetupMenu()
 	MenuFlyout menu;
 	menu.Items().Append(settingsItem);
 	menu.Items().Append(startupItem);
+	menu.Items().Append(notificationItem);
 	menu.Items().Append(exitItem);
 	menu.Opened([](const auto& sender, const auto&) {
 		auto menuItems = sender.as<MenuFlyout>().Items();
@@ -535,5 +565,67 @@ void SetStartupStatus(bool status)
 		}
 
 		RegCloseKey(hKey);
+	}
+}
+
+void ShowInitialToastNotification()
+{
+	try
+	{
+		std::wstring title = _(L"AudioPlaybackConnector");
+		std::wstring message = _(L"Application has started and is running in the notification area.");
+
+		std::wstring toastXmlString =
+			L"<toast>"
+			L"<visual>"
+			L"<binding template=\"ToastGeneric\">"
+			L"<text>" + title + L"</text>"
+			L"<text>" + message + L"</text>"
+			L"</binding>"
+			L"</visual>"
+			L"</toast>";
+
+		XmlDocument toastXml;
+		toastXml.LoadXml(toastXmlString);
+
+		ToastNotifier notifier{ nullptr };
+		try
+		{
+			notifier = ToastNotificationManager::CreateToastNotifier();
+		}
+		catch (winrt::hresult_error const&)
+		{
+			LOG_CAUGHT_EXCEPTION();
+			wchar_t exePath[MAX_PATH];
+			GetModuleFileNameW(NULL, exePath, MAX_PATH);
+			std::wstring appId = exePath;
+			try
+			{
+				notifier = ToastNotificationManager::CreateToastNotifier(appId);
+			}
+			catch (winrt::hresult_error const&)
+			{
+				LOG_CAUGHT_EXCEPTION();
+			}
+		}
+
+		if (!notifier)
+		{
+			return;
+		}
+
+		ToastNotification toast(toastXml);
+
+		using namespace std::chrono;
+		toast.ExpirationTime(winrt::Windows::Foundation::DateTime::clock::now() + seconds(5));
+
+		notifier.Show(toast);
+	}
+	catch (winrt::hresult_error const&)
+	{
+		LOG_CAUGHT_EXCEPTION();
+	}
+	catch (std::exception const&)
+	{
 	}
 }

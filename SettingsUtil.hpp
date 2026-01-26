@@ -6,6 +6,7 @@ constexpr auto BUFFER_SIZE = 4096;
 void DefaultSettings()
 {
 	g_reconnect = false;
+	g_showNotification = true;
 	g_lastDevices.clear();
 }
 
@@ -33,6 +34,9 @@ void LoadSettings()
 		std::wstring utf16 = Utf8ToUtf16(string);
 		auto jsonObj = JsonObject::Parse(utf16);
 		g_reconnect = jsonObj.Lookup(L"reconnect").GetBoolean();
+		
+		if (jsonObj.HasKey(L"showNotification"))
+			g_showNotification = jsonObj.Lookup(L"showNotification").GetBoolean();
 
 		auto lastDevices = jsonObj.Lookup(L"lastDevices").GetArray();
 		g_lastDevices.reserve(lastDevices.Size());
@@ -51,6 +55,7 @@ void SaveSettings()
 	{
 		JsonObject jsonObj;
 		jsonObj.Insert(L"reconnect", JsonValue::CreateBooleanValue(g_reconnect));
+		jsonObj.Insert(L"showNotification", JsonValue::CreateBooleanValue(g_showNotification));
 
 		JsonArray lastDevices;
 		for (const auto& i : g_audioPlaybackConnections)

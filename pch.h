@@ -50,5 +50,7 @@
 #include <winrt/Windows.UI.Xaml.Hosting.h>
 #include <windows.ui.xaml.hosting.desktopwindowxamlsource.h>
 #include <winrt/Windows.UI.Xaml.Markup.h>
+#include <winrt/Windows.UI.Notifications.h>
+#include <winrt/Windows.Data.Xml.Dom.h>
 
 #endif //PCH_H
