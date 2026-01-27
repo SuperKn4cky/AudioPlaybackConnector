@@ -605,12 +605,13 @@ void ShowInitialToastNotification()
 		catch (winrt::hresult_error const&)
 		{
 			LOG_CAUGHT_EXCEPTION();
-			wchar_t exePath[MAX_PATH];
-			GetModuleFileNameW(NULL, exePath, MAX_PATH);
-			std::wstring appId = exePath;
+			// wchar_t exePath[MAX_PATH];
+			// GetModuleFileNameW(NULL, exePath, MAX_PATH);
+			// std::wstring appId = exePath;
 			try
 			{
-				notifier = ToastNotificationManager::CreateToastNotifier(appId);
+				// notifier = ToastNotificationManager::CreateToastNotifier(appId);
+				notifier = ToastNotificationManager::CreateToastNotifier(L"AudioPlaybackConnector");
 			}
 			catch (winrt::hresult_error const&)
 			{
@@ -619,10 +620,10 @@ void ShowInitialToastNotification()
 			}
 		}
 
-		if (!notifier)
-		{
-			return;
-		}
+		// if (!notifier)
+		// {
+		// 	return;
+		// }
 
 		ToastNotification toast(toastXml);
 
