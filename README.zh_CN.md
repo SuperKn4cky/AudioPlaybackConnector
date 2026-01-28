@@ -8,12 +8,12 @@
 [Releases](https://github.com/gongfuture/AudioPlaybackConnector/releases)
 
 ## 鸣谢
-感谢 [ysc3839](https://github.com/ysc3839) 创建并开源了 [AudioPlaybackConnector](https://github.com/ysc3839/AudioPlaybackConnector)，使得我能够参考其实现并复刻该项目。
-感谢 [dmagician038](https://github.com/dmagician038) 的 [复刻](https://github.com/dmagician038/AudioPlaybackConnector)，从中整合功能 防止多个实例同时运行
-感谢 [kb5000](https://github.com/kb5000) 的 [复刻](https://github.com/kb5000/AudioPlaybackConnector)，从中整合功能 配置登陆时自动运行
-感谢 [hmkim123](https://github.com/hmkim123) 的 [复刻](https://github.com/hmkim123/AudioPlaybackConnector)，从中整合功能 连接时改变托盘颜色以及bug修复
-感谢 [lkk9898969](https://github.com/lkk9898969) 的 [复刻](https://github.com/lkk9898969/AudioPlaybackConnector)，从中整合功能 应用启动后通知
-感谢 [MoroccoBS](https://github.com/MoroccoBS) 的 [复刻](https://github.com/MoroccoBS/AudioPlaybackConnector)，从中整合功能 ~~音频路由和设备管理~~以及CI更新
+- 感谢 [ysc3839](https://github.com/ysc3839) 创建并开源了 [AudioPlaybackConnector](https://github.com/ysc3839/AudioPlaybackConnector)，使得我能够参考其实现并复刻该项目。
+- 感谢 [dmagician038](https://github.com/dmagician038) 的 [复刻](https://github.com/dmagician038/AudioPlaybackConnector)，从中整合功能 防止多个实例同时运行
+- 感谢 [kb5000](https://github.com/kb5000) 的 [复刻](https://github.com/kb5000/AudioPlaybackConnector)，从中整合功能 配置登陆时自动运行
+- 感谢 [hmkim123](https://github.com/hmkim123) 的 [复刻](https://github.com/hmkim123/AudioPlaybackConnector)，从中整合功能 连接时改变托盘颜色以及bug修复
+- 感谢 [lkk9898969](https://github.com/lkk9898969) 的 [复刻](https://github.com/lkk9898969/AudioPlaybackConnector)，从中整合功能 应用启动后通知
+- 感谢 [MoroccoBS](https://github.com/MoroccoBS) 的 [复刻](https://github.com/MoroccoBS/AudioPlaybackConnector)，从中整合功能 ~~音频路由和设备管理~~以及CI更新
 
 > 音频路由和设备管理一开始整合了，但是后来发现用不着，直接在控制面板的声音设置，改对应设备的监听输出设备就行，所以就没整合
 

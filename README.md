@@ -10,12 +10,12 @@ English README translated by DeepSeek-R1. Please refer to the Chinese version fo
 Forked from [ysc3839/AudioPlaybackConnector](https://github.com/ysc3839/AudioPlaybackConnector)
 
 ## Credits
-Thanks to [ysc3839](https://github.com/ysc3839) for creating and open-sourcing [AudioPlaybackConnector](https://github.com/ysc3839/AudioPlaybackConnector), which allowed me to reference its implementation and fork the project.  
-Thanks to [dmagician038](https://github.com/dmagician038)'s [fork](https://github.com/dmagician038/AudioPlaybackConnector), from which I integrated the feature to prevent multiple instances from running simultaneously.  
-Thanks to [kb5000](https://github.com/kb5000)'s [fork](https://github.com/kb5000/AudioPlaybackConnector), from which I integrated the feature to auto-run on login.  
-Thanks to [hmkim123](https://github.com/hmkim123)'s [fork](https://github.com/hmkim123/AudioPlaybackConnector), from which I integrated the feature to change tray icon color on connection and bug fixes.  
-Thanks to [lkk9898969](https://github.com/lkk9898969)'s [fork](https://github.com/lkk9898969/AudioPlaybackConnector), from which I integrated the feature for notification on application startup.  
-Thanks to [MoroccoBS](https://github.com/MoroccoBS)'s [fork](https://github.com/MoroccoBS/AudioPlaybackConnector), from which I integrated the feature ~~Audio routing and device management~~ and CI updates.
+- Thanks to [ysc3839](https://github.com/ysc3839) for creating and open-sourcing [AudioPlaybackConnector](https://github.com/ysc3839/AudioPlaybackConnector), which allowed me to reference its implementation and fork the project.  
+- Thanks to [dmagician038](https://github.com/dmagician038)'s [fork](https://github.com/dmagician038/AudioPlaybackConnector), from which I integrated the feature to prevent multiple instances from running simultaneously.  
+- Thanks to [kb5000](https://github.com/kb5000)'s [fork](https://github.com/kb5000/AudioPlaybackConnector), from which I integrated the feature to auto-run on login.  
+- Thanks to [hmkim123](https://github.com/hmkim123)'s [fork](https://github.com/hmkim123/AudioPlaybackConnector), from which I integrated the feature to change tray icon color on connection and bug fixes.  
+- Thanks to [lkk9898969](https://github.com/lkk9898969)'s [fork](https://github.com/lkk9898969/AudioPlaybackConnector), from which I integrated the feature for notification on application startup.  
+- Thanks to [MoroccoBS](https://github.com/MoroccoBS)'s [fork](https://github.com/MoroccoBS/AudioPlaybackConnector), from which I integrated the feature ~~Audio routing and device management~~ and CI updates.
 
 > Audio routing and device management were initially integrated but later found unnecessary, as you can simply change the listening output device for the corresponding device in the Sound settings of the Control Panel. Therefore, this feature was not integrated.
 
