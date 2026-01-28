@@ -27,11 +27,20 @@ Tested only on Windows 11 23H2 (as I am using Win11). Compatibility with other v
 Issues encountered on other versions can be reported via GitHub Issues, but reproduction and fixes cannot be guaranteed.
 
 ## Screenshots
-![Notification](https://cdn.jsdelivr.net/gh/gongfuture/AudioPlaybackConnector@master/assets/通知.png)
-![Tray Icon](https://cdn.jsdelivr.net/gh/gongfuture/AudioPlaybackConnector@master/assets/托盘图标.png)
-![Right-click Menu](https://cdn.jsdelivr.net/gh/gongfuture/AudioPlaybackConnector@master/assets/右键菜单.png)
-![Multiple Instances Warning](https://cdn.jsdelivr.net/gh/gongfuture/AudioPlaybackConnector@master/assets/重复实例警告.png)
+<center>
 
+![Tray Icon](https://cdn.jsdelivr.net/gh/gongfuture/AudioPlaybackConnector@master/assets/托盘图标.png)
+Tray Icon
+
+![Right-click Menu](https://cdn.jsdelivr.net/gh/gongfuture/AudioPlaybackConnector@master/assets/右键菜单.png)
+Right-Click Menu
+
+![Notification](https://cdn.jsdelivr.net/gh/gongfuture/AudioPlaybackConnector@master/assets/通知.png)
+Notification
+
+![Multiple Instances Warning](https://cdn.jsdelivr.net/gh/gongfuture/AudioPlaybackConnector@master/assets/重复实例警告.png)
+Multiple Instances Warning
+</center>
 
 ## Troubleshooting
 When referencing [MoroccoBS](https://github.com/MoroccoBS)'s [fork](https://github.com/MoroccoBS/AudioPlaybackConnector), an issue was discovered where A2DP Sink devices could not be found on Windows 11. The solution is as follows:
