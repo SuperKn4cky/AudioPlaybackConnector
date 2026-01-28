@@ -30,16 +30,21 @@ Issues encountered on other versions can be reported via GitHub Issues, but repr
 <center>
 
 ![Tray Icon](https://cdn.jsdelivr.net/gh/gongfuture/AudioPlaybackConnector@master/assets/托盘图标.png)
+
 Tray Icon
 
 ![Right-click Menu](https://cdn.jsdelivr.net/gh/gongfuture/AudioPlaybackConnector@master/assets/右键菜单.png)
+
 Right-Click Menu
 
 ![Notification](https://cdn.jsdelivr.net/gh/gongfuture/AudioPlaybackConnector@master/assets/通知.png)
+
 Notification
 
 ![Multiple Instances Warning](https://cdn.jsdelivr.net/gh/gongfuture/AudioPlaybackConnector@master/assets/重复实例警告.png)
+
 Multiple Instances Warning
+
 </center>
 
 ## Troubleshooting

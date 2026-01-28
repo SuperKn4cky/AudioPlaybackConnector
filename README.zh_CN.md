@@ -28,16 +28,21 @@
 <center>
 
 ![托盘图标](https://cdn.jsdelivr.net/gh/gongfuture/AudioPlaybackConnector@master/assets/托盘图标.png)
+
 托盘图标
 
 ![右键菜单](https://cdn.jsdelivr.net/gh/gongfuture/AudioPlaybackConnector@master/assets/右键菜单.png)
+
 右键菜单
 
 ![通知](https://cdn.jsdelivr.net/gh/gongfuture/AudioPlaybackConnector@master/assets/通知.png)
+
 通知
 
 ![重复实例警告](https://cdn.jsdelivr.net/gh/gongfuture/AudioPlaybackConnector@master/assets/重复实例警告.png)
+
 重复实例警告
+
 </center>
 
 ## 疑难杂症解决
