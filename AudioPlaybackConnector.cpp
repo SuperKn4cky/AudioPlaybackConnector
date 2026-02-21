@@ -196,15 +196,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			MONITORINFO monitorInfo{ sizeof(monitorInfo) };
 			if (GetMonitorInfoW(MonitorFromRect(&iconRect, MONITOR_DEFAULTTONEAREST), &monitorInfo))
 			{
-				const LONG edgeThresholdPx = MulDiv(40, dpi, USER_DEFAULT_SCREEN_DPI);
-				if (iconRect.right >= monitorInfo.rcWork.right - edgeThresholdPx)
-				{
-					pickerPlacement = Placement::Left;
-				}
-				else if (iconRect.left <= monitorInfo.rcWork.left + edgeThresholdPx)
-				{
-					pickerPlacement = Placement::Right;
-				}
+				// Always open the picker toward the screen center to avoid edge-clipped native buttons.
+				const LONG workCenterX = monitorInfo.rcWork.left + (monitorInfo.rcWork.right - monitorInfo.rcWork.left) / 2;
+				const LONG iconCenterX = iconRect.left + (iconRect.right - iconRect.left) / 2;
+				pickerPlacement = (iconCenterX >= workCenterX) ? Placement::Left : Placement::Right;
+
+				const LONG insetPx = MulDiv(16, dpi, USER_DEFAULT_SCREEN_DPI);
+				const LONG anchorWidthPx = iconRect.right - iconRect.left;
+				const LONG minLeftPx = monitorInfo.rcWork.left + insetPx;
+				const LONG maxLeftPx = monitorInfo.rcWork.right - insetPx - anchorWidthPx;
+				const LONG clampedLeftPx = std::clamp(iconRect.left, minLeftPx, maxLeftPx);
+				rect.X = static_cast<float>(clampedLeftPx * USER_DEFAULT_SCREEN_DPI / dpi);
 			}
 
 			SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), SWP_HIDEWINDOW);
