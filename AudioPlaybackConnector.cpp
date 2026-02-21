@@ -253,8 +253,9 @@ void SetupFlyout()
 
 	Button button;
 	button.Content(winrt::box_value(_(L"Exit")));
-	button.MinWidth(96);
-	button.Margin({ 0, 12, 12, 0 });
+	button.MinWidth(112);
+	button.MinHeight(32);
+	button.Margin({ 0, 8, 0, 0 });
 	button.HorizontalAlignment(HorizontalAlignment::Right);
 	button.Click([](const auto&, const auto&) {
 		g_reconnect = checkbox.IsChecked().Value();
@@ -262,6 +263,7 @@ void SetupFlyout()
 	});
 
 	StackPanel stackPanel;
+	stackPanel.Padding({ 12, 12, 12, 12 });
 	stackPanel.Children().Append(textBlock);
 	stackPanel.Children().Append(checkbox);
 	stackPanel.Children().Append(button);
