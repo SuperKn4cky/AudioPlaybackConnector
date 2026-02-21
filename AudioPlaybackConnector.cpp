@@ -192,10 +192,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				static_cast<float>((iconRect.right - iconRect.left) * USER_DEFAULT_SCREEN_DPI / dpi),
 				static_cast<float>((iconRect.bottom - iconRect.top) * USER_DEFAULT_SCREEN_DPI / dpi)
 			};
+			Placement pickerPlacement = Placement::Above;
+			MONITORINFO monitorInfo{ sizeof(monitorInfo) };
+			if (GetMonitorInfoW(MonitorFromRect(&iconRect, MONITOR_DEFAULTTONEAREST), &monitorInfo))
+			{
+				const LONG edgeThresholdPx = MulDiv(40, dpi, USER_DEFAULT_SCREEN_DPI);
+				if (iconRect.right >= monitorInfo.rcWork.right - edgeThresholdPx)
+				{
+					pickerPlacement = Placement::Left;
+				}
+				else if (iconRect.left <= monitorInfo.rcWork.left + edgeThresholdPx)
+				{
+					pickerPlacement = Placement::Right;
+				}
+			}
 
 			SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), SWP_HIDEWINDOW);
 			SetForegroundWindow(hWnd);
-			g_devicePicker.Show(rect, Placement::Above);
+			g_devicePicker.Show(rect, pickerPlacement);
 		}
 		break;
 		case WM_RBUTTONUP: // Menu activated by mouse click
