@@ -18,12 +18,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
           git init .
-          git config --global http.https://github.com/.extraheader "AUTHORIZATION: bearer $env:GITHUB_TOKEN"
-          git remote add origin "git@github.com:SuperKn4cky/AudioPlaybackConnector.git"
-          git fetch --depth 1 origin "${{ github.sha }}"
+          git remote add origin "https://github.com/SuperKn4cky/AudioPlaybackConnector.git"
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: bearer $env:GITHUB_TOKEN" fetch --depth 1 origin "${{ github.sha }}"
           git checkout --force FETCH_HEAD
-          git submodule update --init --recursive --depth 1
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: bearer $env:GITHUB_TOKEN" submodule update --init --recursive --depth 1
 
       - name: Validate toolchain
         shell: pwsh
