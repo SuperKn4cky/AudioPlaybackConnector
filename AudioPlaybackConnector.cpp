@@ -11,6 +11,7 @@ void SetupSvgIcon();
 void UpdateNotifyIcon();
 bool GetStartupStatus();
 void SetStartupStatus(bool status);
+std::wstring BuildStartupCommand(const fs::path& exePath);
 void ShowInitialToastNotification();
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
@@ -21,6 +22,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	UNREFERENCED_PARAMETER(hPrevInstance);
 	UNREFERENCED_PARAMETER(lpCmdLine);
 	UNREFERENCED_PARAMETER(nCmdShow);
+
+	g_hInst = hInstance;
+	LoadTranslateData();
 
 	// Prevent multiple instances
 	g_hMutex = CreateMutexW(nullptr, FALSE, L"Local\\AudioPlaybackConnector_Mutex");
@@ -34,8 +38,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		TaskDialog(nullptr, nullptr, _(L"Already running!"), nullptr, _(L"AudioPlaybackConnector is already running in background.\r\nCheck system tray."), TDCBF_OK_BUTTON, TD_WARNING_ICON, nullptr);
 		return EXIT_FAILURE;
 	}
-
-	g_hInst = hInstance;
 
 	winrt::init_apartment();
 
@@ -123,20 +125,37 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	switch (message)
 	{
 	case WM_DESTROY:
-		for (const auto& connection : g_audioPlaybackConnections)
 		{
-			connection.second.second.Close();
-			g_devicePicker.SetDisplayStatus(connection.second.first, {}, DevicePickerDisplayStatusOptions::None);
-		}
-		if (g_reconnect)
-		{
-			SaveSettings();
-			g_audioPlaybackConnections.clear();
-		}
-		else
-		{
-			g_audioPlaybackConnections.clear();
-			SaveSettings();
+			std::vector<std::pair<DeviceInformation, AudioPlaybackConnection>> connectionsToClose;
+			{
+				std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
+				connectionsToClose.reserve(g_audioPlaybackConnections.size());
+				for (const auto& connection : g_audioPlaybackConnections)
+				{
+					connectionsToClose.push_back(connection.second);
+				}
+			}
+
+			for (const auto& connection : connectionsToClose)
+			{
+				connection.second.Close();
+				g_devicePicker.SetDisplayStatus(connection.first, {}, DevicePickerDisplayStatusOptions::None);
+			}
+
+			if (g_reconnect)
+			{
+				SaveSettings();
+			}
+
+			{
+				std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
+				g_audioPlaybackConnections.clear();
+			}
+
+			if (!g_reconnect)
+			{
+				SaveSettings();
+			}
 		}
 		Shell_NotifyIconW(NIM_DELETE, &g_nid);
 		if (g_hIconConnected) { DestroyIcon(g_hIconConnected); g_hIconConnected = nullptr; }
@@ -318,7 +337,13 @@ void SetupMenu()
 	exitItem.Text(_(L"Exit"));
 	exitItem.Icon(closeIcon);
 	exitItem.Click([](const auto&, const auto&) {
-		if (g_audioPlaybackConnections.size() == 0)
+		size_t connectionCount = 0;
+		{
+			std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
+			connectionCount = g_audioPlaybackConnections.size();
+		}
+
+		if (connectionCount == 0)
 		{
 			PostMessageW(g_hWnd, WM_CLOSE, 0, 0);
 			return;
@@ -374,16 +399,27 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 		auto connection = AudioPlaybackConnection::TryCreateFromId(device.Id());
 		if (connection)
 		{
-			g_audioPlaybackConnections.emplace(device.Id(), std::pair(device, connection));
+			{
+				std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
+				g_audioPlaybackConnections.emplace(device.Id(), std::pair(device, connection));
+			}
 
 			connection.StateChanged([](const auto& sender, const auto&) {
 				if (sender.State() == AudioPlaybackConnectionState::Closed)
 				{
-					auto it = g_audioPlaybackConnections.find(std::wstring(sender.DeviceId()));
-					if (it != g_audioPlaybackConnections.end())
+					std::optional<DeviceInformation> deviceToUpdate;
 					{
-						g_devicePicker.SetDisplayStatus(it->second.first, {}, DevicePickerDisplayStatusOptions::None);
-						g_audioPlaybackConnections.erase(it);
+						std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
+						auto it = g_audioPlaybackConnections.find(std::wstring(sender.DeviceId()));
+						if (it != g_audioPlaybackConnections.end())
+						{
+							deviceToUpdate = it->second.first;
+							g_audioPlaybackConnections.erase(it);
+						}
+					}
+					if (deviceToUpdate)
+					{
+						g_devicePicker.SetDisplayStatus(*deviceToUpdate, {}, DevicePickerDisplayStatusOptions::None);
 					}
 					// Note: sender.Close() removed here as it's already closed when state is Closed
 					// Calling Close() again could cause issues. Cleanup happens via erase above.
@@ -446,11 +482,21 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 	}
 	else
 	{
-		auto it = g_audioPlaybackConnections.find(std::wstring(device.Id()));
-		if (it != g_audioPlaybackConnections.end())
+		AudioPlaybackConnection connectionToClose{ nullptr };
+		bool hasConnection = false;
 		{
-			it->second.second.Close();
-			g_audioPlaybackConnections.erase(it);
+			std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
+			auto it = g_audioPlaybackConnections.find(std::wstring(device.Id()));
+			if (it != g_audioPlaybackConnections.end())
+			{
+				connectionToClose = it->second.second;
+				g_audioPlaybackConnections.erase(it);
+				hasConnection = true;
+			}
+		}
+		if (hasConnection)
+		{
+			connectionToClose.Close();
 		}
 		picker.SetDisplayStatus(device, errorMessage, DevicePickerDisplayStatusOptions::ShowRetryButton);
 		UpdateNotifyIcon();
@@ -477,11 +523,21 @@ void SetupDevicePicker()
 	});
 	g_devicePicker.DisconnectButtonClicked([](const auto& sender, const auto& args) {
 		auto device = args.Device();
-		auto it = g_audioPlaybackConnections.find(std::wstring(device.Id()));
-		if (it != g_audioPlaybackConnections.end())
+		AudioPlaybackConnection connectionToClose{ nullptr };
+		bool hasConnection = false;
 		{
-			it->second.second.Close();
-			g_audioPlaybackConnections.erase(it);
+			std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
+			auto it = g_audioPlaybackConnections.find(std::wstring(device.Id()));
+			if (it != g_audioPlaybackConnections.end())
+			{
+				connectionToClose = it->second.second;
+				g_audioPlaybackConnections.erase(it);
+				hasConnection = true;
+			}
+		}
+		if (hasConnection)
+		{
+			connectionToClose.Close();
 		}
 		sender.SetDisplayStatus(device, {}, DevicePickerDisplayStatusOptions::None);
 		UpdateNotifyIcon();
@@ -513,7 +569,12 @@ void SetupSvgIcon()
 void UpdateNotifyIcon()
 {
 	// Set icon based on connection state: green if any connection exists, red otherwise
-	g_nid.hIcon = !g_audioPlaybackConnections.empty() ? g_hIconConnected : g_hIconDisconnected;
+	bool hasConnections = false;
+	{
+		std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
+		hasConnections = !g_audioPlaybackConnections.empty();
+	}
+	g_nid.hIcon = hasConnections ? g_hIconConnected : g_hIconDisconnected;
 
 	if (!Shell_NotifyIconW(NIM_MODIFY, &g_nid))
 	{
@@ -530,22 +591,47 @@ void UpdateNotifyIcon()
 
 bool GetStartupStatus()
 {
-	auto exePath = GetModuleFsPath(g_hInst);
+	const auto exePath = GetModuleFsPath(g_hInst);
+	const auto expectedQuoted = BuildStartupCommand(exePath);
+	const auto expectedLegacy = exePath.wstring();
 
-	HKEY hKey;
-	if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_READ, &hKey) == ERROR_SUCCESS)
+	HKEY hKey = nullptr;
+	if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_READ, &hKey) != ERROR_SUCCESS)
 	{
-		wchar_t storedPath[MAX_PATH] = { 0 };
-		DWORD pathLength = sizeof(storedPath);
-		DWORD type = REG_SZ;
-		LSTATUS result = RegQueryValueExW(hKey, L"AudioPlaybackConnector", 0, &type, (LPBYTE)storedPath, &pathLength);
+		return false;
+	}
 
+	DWORD type = REG_NONE;
+	DWORD bytes = 0;
+	const LSTATUS sizeResult = RegQueryValueExW(hKey, L"AudioPlaybackConnector", nullptr, &type, nullptr, &bytes);
+	if (sizeResult != ERROR_SUCCESS || type != REG_SZ || bytes < sizeof(wchar_t))
+	{
 		RegCloseKey(hKey);
+		return false;
+	}
 
-		if (result == ERROR_SUCCESS && type == REG_SZ && exePath == storedPath)
-		{
-			return true;
-		}
+	std::wstring storedCommand(bytes / sizeof(wchar_t), L'\0');
+	const LSTATUS valueResult = RegQueryValueExW(hKey, L"AudioPlaybackConnector", nullptr, &type, reinterpret_cast<LPBYTE>(storedCommand.data()), &bytes);
+	RegCloseKey(hKey);
+	if (valueResult != ERROR_SUCCESS || type != REG_SZ)
+	{
+		return false;
+	}
+
+	while (!storedCommand.empty() && storedCommand.back() == L'\0')
+	{
+		storedCommand.pop_back();
+	}
+
+	if (storedCommand == expectedQuoted)
+	{
+		return true;
+	}
+	if (storedCommand == expectedLegacy)
+	{
+		// Migrate legacy unquoted command line to quoted format.
+		SetStartupStatus(true);
+		return true;
 	}
 
 	return false;
@@ -553,15 +639,16 @@ bool GetStartupStatus()
 
 void SetStartupStatus(bool status)
 {
-	auto exePath = GetModuleFsPath(g_hInst);
+	const auto exePath = GetModuleFsPath(g_hInst);
 
-	HKEY hKey;
+	HKEY hKey = nullptr;
 	if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_WRITE, &hKey) == ERROR_SUCCESS)
 	{
 		if (status)
 		{
-			auto exePathStr = exePath.wstring();
-			LSTATUS stat = RegSetValueExW(hKey, L"AudioPlaybackConnector", 0, REG_SZ, (LPBYTE)exePathStr.c_str(), (lstrlenW(exePathStr.c_str()) + 1) * sizeof(wchar_t));
+			const auto startupCommand = BuildStartupCommand(exePath);
+			const auto startupCommandSize = static_cast<DWORD>((startupCommand.size() + 1) * sizeof(wchar_t));
+			LSTATUS stat = RegSetValueExW(hKey, L"AudioPlaybackConnector", 0, REG_SZ, reinterpret_cast<const BYTE*>(startupCommand.c_str()), startupCommandSize);
 			if (stat != ERROR_SUCCESS)
 			{
 				RegCloseKey(hKey);
@@ -575,6 +662,17 @@ void SetStartupStatus(bool status)
 
 		RegCloseKey(hKey);
 	}
+}
+
+std::wstring BuildStartupCommand(const fs::path& exePath)
+{
+	std::wstring command;
+	const auto rawPath = exePath.wstring();
+	command.reserve(rawPath.size() + 2);
+	command.push_back(L'"');
+	command.append(rawPath);
+	command.push_back(L'"');
+	return command;
 }
 
 void ShowInitialToastNotification()

@@ -34,6 +34,9 @@
 // C++ RunTime Header Files
 #include <cstdlib>
 #include <cstdint>
+#include <algorithm>
+#include <mutex>
+#include <optional>
 #include <unordered_map>
 #include <filesystem>
 

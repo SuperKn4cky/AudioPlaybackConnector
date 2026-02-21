@@ -3,36 +3,83 @@
 
 std::unordered_map<uint32_t, const wchar_t*> hashToStrMap;
 
-#pragma pack(push, 1)
-struct YMOData
-{
-	uint16_t len;
-	struct
-	{
-		uint32_t hash;
-		uint16_t offset;
-	} table[1];
-};
-#pragma pack(pop)
-
 void LoadTranslateData()
 {
 	auto hRes = FindResourceExW(g_hInst, L"YMO", MAKEINTRESOURCEW(1), GetThreadUILanguage());
 	if (hRes)
 	{
+		const DWORD resSize = SizeofResource(g_hInst, hRes);
+		if (resSize < sizeof(uint16_t))
+		{
+			return;
+		}
+
 		auto hResData = LoadResource(g_hInst, hRes);
 		if (hResData)
 		{
-			auto ymo = reinterpret_cast<const YMOData*>(LockResource(hResData));
-			if (ymo)
+			const auto base = reinterpret_cast<const uint8_t*>(LockResource(hResData));
+			if (base)
 			{
-				hashToStrMap.reserve(ymo->len);
-
-				for (int i = 0; i < ymo->len; ++i)
+				const auto readU16 = [](const uint8_t* p) -> uint16_t
 				{
-					auto hash = ymo->table[i].hash;
-					auto offset = ymo->table[i].offset;
-					auto str = reinterpret_cast<const wchar_t*>(reinterpret_cast<const uint8_t*>(hResData) + offset);
+					return static_cast<uint16_t>(p[0] | (static_cast<uint16_t>(p[1]) << 8));
+				};
+				const auto readU32 = [](const uint8_t* p) -> uint32_t
+				{
+					return static_cast<uint32_t>(p[0])
+						| (static_cast<uint32_t>(p[1]) << 8)
+						| (static_cast<uint32_t>(p[2]) << 16)
+						| (static_cast<uint32_t>(p[3]) << 24);
+				};
+				const auto hasNullTerminator = [](const wchar_t* str, size_t maxChars) -> bool
+				{
+					for (size_t i = 0; i < maxChars; ++i)
+					{
+						if (str[i] == L'\0')
+						{
+							return true;
+						}
+					}
+					return false;
+				};
+
+				const size_t size = static_cast<size_t>(resSize);
+				const uint16_t len = readU16(base);
+				const size_t tableOffset = sizeof(uint16_t);
+				const size_t entrySize = sizeof(uint32_t) + sizeof(uint16_t);
+
+				if (size < tableOffset + (static_cast<size_t>(len) * entrySize))
+				{
+					return;
+				}
+
+				hashToStrMap.clear();
+				hashToStrMap.reserve(len);
+
+				for (uint16_t i = 0; i < len; ++i)
+				{
+					const size_t entryOffset = tableOffset + (static_cast<size_t>(i) * entrySize);
+					const uint32_t hash = readU32(base + entryOffset);
+					const uint16_t offset = readU16(base + entryOffset + sizeof(uint32_t));
+
+					if (offset >= size || (offset % sizeof(wchar_t)) != 0)
+					{
+						continue;
+					}
+
+					const size_t bytesRemaining = size - offset;
+					const size_t maxChars = bytesRemaining / sizeof(wchar_t);
+					if (maxChars == 0)
+					{
+						continue;
+					}
+
+					const auto str = reinterpret_cast<const wchar_t*>(base + offset);
+					if (!hasNullTerminator(str, maxChars))
+					{
+						continue;
+					}
+
 					hashToStrMap.emplace(hash, str);
 				}
 			}

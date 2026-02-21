@@ -26,6 +26,8 @@ MenuFlyout g_xamlMenu = nullptr;
 FocusState g_menuFocusState = FocusState::Unfocused;
 DevicePicker g_devicePicker = nullptr;
 std::unordered_map<std::wstring, std::pair<DeviceInformation, AudioPlaybackConnection>> g_audioPlaybackConnections;
+// Accessed from UI handlers and async callbacks; keep map operations synchronized.
+std::mutex g_audioPlaybackConnectionsMutex;
 HICON g_hIconConnected = nullptr;
 HICON g_hIconDisconnected = nullptr;
 NOTIFYICONDATAW g_nid = {

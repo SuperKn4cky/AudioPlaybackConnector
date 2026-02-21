@@ -2,6 +2,7 @@
 
 constexpr auto CONFIG_NAME = L"AudioPlaybackConnector.json";
 constexpr auto BUFFER_SIZE = 4096;
+constexpr size_t MAX_CONFIG_SIZE = 1024 * 1024;
 
 void DefaultSettings()
 {
@@ -23,9 +24,11 @@ void LoadSettings()
 		while (1)
 		{
 			size_t size = string.size();
-			string.resize(size + BUFFER_SIZE);
+			THROW_HR_IF(E_BOUNDS, size >= MAX_CONFIG_SIZE);
+			const DWORD bytesToRead = static_cast<DWORD>(std::min<size_t>(BUFFER_SIZE, MAX_CONFIG_SIZE - size));
+			string.resize(size + bytesToRead);
 			DWORD read = 0;
-			THROW_IF_WIN32_BOOL_FALSE(ReadFile(hFile.get(), string.data() + size, BUFFER_SIZE, &read, nullptr));
+			THROW_IF_WIN32_BOOL_FALSE(ReadFile(hFile.get(), string.data() + size, bytesToRead, &read, nullptr));
 			string.resize(size + read);
 			if (read == 0)
 				break;
@@ -58,9 +61,12 @@ void SaveSettings()
 		jsonObj.Insert(L"showNotification", JsonValue::CreateBooleanValue(g_showNotification));
 
 		JsonArray lastDevices;
-		for (const auto& i : g_audioPlaybackConnections)
 		{
-			lastDevices.Append(JsonValue::CreateStringValue(i.first));
+			std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
+			for (const auto& i : g_audioPlaybackConnections)
+			{
+				lastDevices.Append(JsonValue::CreateStringValue(i.first));
+			}
 		}
 		jsonObj.Insert(L"lastDevices", lastDevices);
 
