@@ -3,6 +3,23 @@
     <ClCompile>
       <!-- Force compiler to treat source files as UTF-8 to avoid C4819 on non-ANSI locales -->
       <AdditionalOptions>%(AdditionalOptions) /utf-8</AdditionalOptions>
+      <!-- Explicitly require stack cookie checks. -->
+      <BufferSecurityCheck>true</BufferSecurityCheck>
     </ClCompile>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <Link>
+      <!-- Explicitly enable common linker mitigations. -->
+      <RandomizedBaseAddress>true</RandomizedBaseAddress>
+      <DataExecutionPrevention>true</DataExecutionPrevention>
+      <HighEntropyVA>true</HighEntropyVA>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release' and ('$(Platform)'=='Win32' or '$(Platform)'=='x64')">
+    <Link>
+      <ControlFlowGuard>Guard</ControlFlowGuard>
+    </Link>
   </ItemDefinitionGroup>
 </Project>
