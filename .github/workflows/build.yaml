@@ -20,11 +20,15 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $PSNativeCommandUseErrorActionPreference = $true
+          $env:GIT_TERMINAL_PROMPT = "0"
+          $basicAuth = [Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes("x-access-token:$env:GITHUB_TOKEN"))
+          $gitAuthHeader = "AUTHORIZATION: basic $basicAuth"
           git init .
           git remote add origin "https://github.com/SuperKn4cky/AudioPlaybackConnector.git"
-          git -c http.https://github.com/.extraheader="AUTHORIZATION: bearer $env:GITHUB_TOKEN" fetch --depth 1 origin "${{ github.sha }}"
+          git -c "http.https://github.com/.extraheader=$gitAuthHeader" fetch --depth 1 origin "${{ github.sha }}"
           git checkout --force FETCH_HEAD
-          git -c http.https://github.com/.extraheader="AUTHORIZATION: bearer $env:GITHUB_TOKEN" submodule update --init --recursive --depth 1
+          git -c "http.https://github.com/.extraheader=$gitAuthHeader" submodule sync --recursive
+          git -c "http.https://github.com/.extraheader=$gitAuthHeader" submodule update --init --recursive --depth 1
 
       - name: Validate toolchain
         shell: pwsh
