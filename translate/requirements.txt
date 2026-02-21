@@ -1,2 +1,1 @@
-six>=1.14.0
-translate-toolkit
+# No external Python dependencies are required for po2ymo.py.
