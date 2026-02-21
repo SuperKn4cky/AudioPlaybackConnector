@@ -186,59 +186,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			}
 
 			auto dpi = GetDpiForWindow(hWnd);
-			RECT anchorRect = iconRect;
-			Placement pickerPlacement = Placement::Above;
-			MONITORINFO monitorInfo{ sizeof(monitorInfo) };
-			if (GetMonitorInfoW(MonitorFromRect(&iconRect, MONITOR_DEFAULTTONEAREST), &monitorInfo))
-			{
-				const LONG distLeft = iconRect.left - monitorInfo.rcMonitor.left;
-				const LONG distRight = monitorInfo.rcMonitor.right - iconRect.right;
-				const LONG distTop = iconRect.top - monitorInfo.rcMonitor.top;
-				const LONG distBottom = monitorInfo.rcMonitor.bottom - iconRect.bottom;
-				const LONG offsetPx = MulDiv(12, dpi, USER_DEFAULT_SCREEN_DPI);
-
-				if (distBottom <= distTop && distBottom <= distLeft && distBottom <= distRight)
-				{
-					pickerPlacement = Placement::Above;
-					anchorRect.top -= offsetPx;
-					anchorRect.bottom -= offsetPx;
-				}
-				else if (distTop <= distLeft && distTop <= distRight)
-				{
-					pickerPlacement = Placement::Below;
-					anchorRect.top += offsetPx;
-					anchorRect.bottom += offsetPx;
-				}
-				else if (distRight <= distLeft)
-				{
-					pickerPlacement = Placement::Left;
-					anchorRect.left -= offsetPx;
-					anchorRect.right -= offsetPx;
-				}
-				else
-				{
-					pickerPlacement = Placement::Right;
-					anchorRect.left += offsetPx;
-					anchorRect.right += offsetPx;
-				}
-
-				const LONG width = anchorRect.right - anchorRect.left;
-				const LONG height = anchorRect.bottom - anchorRect.top;
-				anchorRect.left = std::clamp(anchorRect.left, monitorInfo.rcMonitor.left, monitorInfo.rcMonitor.right - width);
-				anchorRect.top = std::clamp(anchorRect.top, monitorInfo.rcMonitor.top, monitorInfo.rcMonitor.bottom - height);
-				anchorRect.right = anchorRect.left + width;
-				anchorRect.bottom = anchorRect.top + height;
-			}
 			Rect rect = {
-				static_cast<float>(anchorRect.left * USER_DEFAULT_SCREEN_DPI / dpi),
-				static_cast<float>(anchorRect.top * USER_DEFAULT_SCREEN_DPI / dpi),
-				static_cast<float>((anchorRect.right - anchorRect.left) * USER_DEFAULT_SCREEN_DPI / dpi),
-				static_cast<float>((anchorRect.bottom - anchorRect.top) * USER_DEFAULT_SCREEN_DPI / dpi)
+				static_cast<float>(iconRect.left * USER_DEFAULT_SCREEN_DPI / dpi),
+				static_cast<float>(iconRect.top * USER_DEFAULT_SCREEN_DPI / dpi),
+				static_cast<float>((iconRect.right - iconRect.left) * USER_DEFAULT_SCREEN_DPI / dpi),
+				static_cast<float>((iconRect.bottom - iconRect.top) * USER_DEFAULT_SCREEN_DPI / dpi)
 			};
 
 			SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), SWP_HIDEWINDOW);
 			SetForegroundWindow(hWnd);
-			g_devicePicker.Show(rect, pickerPlacement);
+			g_devicePicker.Show(rect, Placement::Above);
 		}
 		break;
 		case WM_RBUTTONUP: // Menu activated by mouse click
