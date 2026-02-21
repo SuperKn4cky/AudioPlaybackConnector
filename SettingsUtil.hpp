@@ -12,10 +12,16 @@ fs::path GetLegacySettingsPath()
 
 fs::path GetSettingsPath()
 {
-	const wchar_t* appData = _wgetenv(L"APPDATA");
-	if (appData && appData[0] != L'\0')
+	const DWORD needed = GetEnvironmentVariableW(L"APPDATA", nullptr, 0);
+	if (needed > 0)
 	{
-		return fs::path(appData) / APPDATA_DIR_NAME / CONFIG_NAME;
+		std::wstring appData(needed, L'\0');
+		const DWORD written = GetEnvironmentVariableW(L"APPDATA", appData.data(), static_cast<DWORD>(appData.size()));
+		if (written > 0 && written < appData.size())
+		{
+			appData.resize(written);
+			return fs::path(appData) / APPDATA_DIR_NAME / CONFIG_NAME;
+		}
 	}
 
 	return GetLegacySettingsPath();
