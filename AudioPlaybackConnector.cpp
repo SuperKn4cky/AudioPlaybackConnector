@@ -253,6 +253,8 @@ void SetupFlyout()
 
 	Button button;
 	button.Content(winrt::box_value(_(L"Exit")));
+	button.MinWidth(96);
+	button.Margin({ 0, 12, 12, 0 });
 	button.HorizontalAlignment(HorizontalAlignment::Right);
 	button.Click([](const auto&, const auto&) {
 		g_reconnect = checkbox.IsChecked().Value();
