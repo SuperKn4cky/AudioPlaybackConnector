@@ -153,9 +153,13 @@ jobs:
               -Headers $headers
           }
 
-          $uploadUrlBase = ($release.upload_url -replace '\{\?name,label\}$', '')
-          if (-not $uploadUrlBase) {
+          $rawUploadUrl = [string]$release.upload_url
+          if ([string]::IsNullOrWhiteSpace($rawUploadUrl)) {
             throw "Release upload_url is missing"
+          }
+          $uploadUrlBase = $rawUploadUrl.Split('{')[0]
+          if (-not [System.Uri]::IsWellFormedUriString($uploadUrlBase, [System.UriKind]::Absolute)) {
+            throw "Release upload_url is invalid: $rawUploadUrl"
           }
 
           foreach ($assetPath in $assetsToUpload) {
@@ -169,7 +173,9 @@ jobs:
             }
 
             $encodedName = [System.Uri]::EscapeDataString($assetName)
-            $uploadUri = "$uploadUrlBase?name=$encodedName"
+            $uploadUriBuilder = [System.UriBuilder]$uploadUrlBase
+            $uploadUriBuilder.Query = "name=$encodedName"
+            $uploadUri = $uploadUriBuilder.Uri.AbsoluteUri
             Invoke-RestMethod `
               -Method Post `
               -Uri $uploadUri `
