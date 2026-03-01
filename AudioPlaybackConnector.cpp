@@ -7,8 +7,8 @@ void SetupFlyout();
 void SetupMenu();
 winrt::fire_and_forget ConnectDevice(DevicePicker, std::wstring_view, bool isAutoReconnect);
 winrt::fire_and_forget ConnectDevice(DevicePicker, DeviceInformation, bool isAutoReconnect);
-void QueueAutoReconnect(std::wstring_view deviceId);
-winrt::fire_and_forget ScheduleAutoReconnect(std::wstring deviceId);
+void QueueAutoReconnect(std::wstring_view deviceId, std::chrono::milliseconds delay);
+winrt::fire_and_forget ScheduleAutoReconnect(std::wstring deviceId, std::chrono::milliseconds delay);
 void SetupDevicePicker();
 void SetupSvgIcon();
 void UpdateNotifyIcon();
@@ -16,6 +16,10 @@ bool GetStartupStatus();
 void SetStartupStatus(bool status);
 std::wstring BuildStartupCommand(const fs::path& exePath);
 void ShowInitialToastNotification();
+
+constexpr auto AUTO_RECONNECT_DEFAULT_DELAY = std::chrono::seconds(3);
+constexpr auto AUTO_RECONNECT_STABILIZATION_DELAY = std::chrono::milliseconds(1200);
+constexpr uint8_t AUTO_RECONNECT_STABILIZATION_RETRIES = 3;
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	_In_opt_ HINSTANCE hPrevInstance,
@@ -136,8 +140,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
 				g_pendingReconnectDevices.clear();
 				g_autoReconnectSuppressedDevices.clear();
-				g_autoReconnectRefreshPendingDevices.clear();
 				g_autoReconnectRefreshInProgressDevices.clear();
+				g_autoReconnectStabilizationAttemptsRemaining.clear();
 				connectionsToClose.reserve(g_audioPlaybackConnections.size());
 				for (const auto& connection : g_audioPlaybackConnections)
 				{
@@ -375,13 +379,16 @@ void SetupMenu()
 			self.Icon(reconnectCheckedIcon);
 			std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
 			g_autoReconnectSuppressedDevices.clear();
+			g_pendingReconnectDevices.clear();
+			g_autoReconnectRefreshInProgressDevices.clear();
+			g_autoReconnectStabilizationAttemptsRemaining.clear();
 		}
 		else {
 			self.Icon(reconnectUncheckedIcon);
 			std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
 			g_pendingReconnectDevices.clear();
-			g_autoReconnectRefreshPendingDevices.clear();
 			g_autoReconnectRefreshInProgressDevices.clear();
+			g_autoReconnectStabilizationAttemptsRemaining.clear();
 		}
 		SaveSettings();
 	});
@@ -448,7 +455,7 @@ void SetupMenu()
 	g_xamlMenu = menu;
 }
 
-void QueueAutoReconnect(std::wstring_view deviceId)
+void QueueAutoReconnect(std::wstring_view deviceId, std::chrono::milliseconds delay)
 {
 	if (!g_reconnect || g_isShuttingDown.load())
 	{
@@ -468,13 +475,13 @@ void QueueAutoReconnect(std::wstring_view deviceId)
 
 	if (shouldSchedule)
 	{
-		ScheduleAutoReconnect(ownedDeviceId);
+		ScheduleAutoReconnect(ownedDeviceId, delay);
 	}
 }
 
-winrt::fire_and_forget ScheduleAutoReconnect(std::wstring deviceId)
+winrt::fire_and_forget ScheduleAutoReconnect(std::wstring deviceId, std::chrono::milliseconds delay)
 {
-	co_await winrt::resume_after(std::chrono::seconds(3));
+	co_await winrt::resume_after(delay);
 
 	bool shouldReconnect = false;
 	{
@@ -530,8 +537,8 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 				g_pendingReconnectDevices.erase(deviceId);
 				if (!isAutoReconnect)
 				{
-					g_autoReconnectRefreshPendingDevices.erase(deviceId);
 					g_autoReconnectRefreshInProgressDevices.erase(deviceId);
+					g_autoReconnectStabilizationAttemptsRemaining.erase(deviceId);
 				}
 
 				auto it = g_audioPlaybackConnections.find(deviceId);
@@ -556,6 +563,7 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 				{
 					const std::wstring closedDeviceId(sender.DeviceId());
 					std::optional<DeviceInformation> deviceToUpdate;
+					bool wasRefreshClose = false;
 					bool removedTrackedConnection = false;
 					{
 						std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
@@ -564,10 +572,10 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 						{
 							deviceToUpdate = it->second.first;
 							g_audioPlaybackConnections.erase(it);
-							const bool isRefreshClose = g_autoReconnectRefreshInProgressDevices.erase(closedDeviceId) > 0;
-							if (!isRefreshClose)
+							wasRefreshClose = g_autoReconnectRefreshInProgressDevices.erase(closedDeviceId) > 0;
+							if (!wasRefreshClose)
 							{
-								g_autoReconnectRefreshPendingDevices.insert(closedDeviceId);
+								g_autoReconnectStabilizationAttemptsRemaining[closedDeviceId] = AUTO_RECONNECT_STABILIZATION_RETRIES;
 							}
 							removedTrackedConnection = true;
 						}
@@ -583,7 +591,8 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 					// Note: sender.Close() removed here as it's already closed when state is Closed
 					// Calling Close() again could cause issues. Cleanup happens via erase above.
 					UpdateNotifyIcon();
-					QueueAutoReconnect(closedDeviceId);
+					const auto delay = wasRefreshClose ? AUTO_RECONNECT_STABILIZATION_DELAY : AUTO_RECONNECT_DEFAULT_DELAY;
+					QueueAutoReconnect(closedDeviceId, delay);
 				}
 			});
 
@@ -597,7 +606,16 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 				if (isAutoReconnect)
 				{
 					std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
-					shouldForceRefreshReconnect = g_autoReconnectRefreshPendingDevices.erase(deviceId) > 0;
+					auto attemptsIt = g_autoReconnectStabilizationAttemptsRemaining.find(deviceId);
+					if (attemptsIt != g_autoReconnectStabilizationAttemptsRemaining.end() && attemptsIt->second > 0)
+					{
+						shouldForceRefreshReconnect = true;
+						--attemptsIt->second;
+						if (attemptsIt->second == 0)
+						{
+							g_autoReconnectStabilizationAttemptsRemaining.erase(attemptsIt);
+						}
+					}
 				}
 				break;
 			case AudioPlaybackConnectionOpenResultStatus::RequestTimedOut:
@@ -680,7 +698,7 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 		}
 		picker.SetDisplayStatus(device, errorMessage, DevicePickerDisplayStatusOptions::ShowRetryButton);
 		UpdateNotifyIcon();
-		QueueAutoReconnect(deviceId);
+		QueueAutoReconnect(deviceId, AUTO_RECONNECT_DEFAULT_DELAY);
 	}
 }
 
@@ -711,8 +729,8 @@ void SetupDevicePicker()
 			std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
 			g_autoReconnectSuppressedDevices.insert(deviceId);
 			g_pendingReconnectDevices.erase(deviceId);
-			g_autoReconnectRefreshPendingDevices.erase(deviceId);
 			g_autoReconnectRefreshInProgressDevices.erase(deviceId);
+			g_autoReconnectStabilizationAttemptsRemaining.erase(deviceId);
 			auto it = g_audioPlaybackConnections.find(deviceId);
 			if (it != g_audioPlaybackConnections.end())
 			{

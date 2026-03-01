@@ -31,8 +31,8 @@ std::unordered_map<std::wstring, std::pair<DeviceInformation, AudioPlaybackConne
 std::mutex g_audioPlaybackConnectionsMutex;
 std::unordered_set<std::wstring> g_pendingReconnectDevices;
 std::unordered_set<std::wstring> g_autoReconnectSuppressedDevices;
-std::unordered_set<std::wstring> g_autoReconnectRefreshPendingDevices;
 std::unordered_set<std::wstring> g_autoReconnectRefreshInProgressDevices;
+std::unordered_map<std::wstring, uint8_t> g_autoReconnectStabilizationAttemptsRemaining;
 std::atomic_bool g_isShuttingDown = false;
 HICON g_hIconConnected = nullptr;
 HICON g_hIconDisconnected = nullptr;
