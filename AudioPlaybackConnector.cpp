@@ -5,7 +5,8 @@
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 void SetupFlyout();
 void SetupMenu();
-winrt::fire_and_forget ConnectDevice(DevicePicker, std::wstring_view);
+winrt::fire_and_forget ConnectDevice(DevicePicker, std::wstring_view, bool isAutoReconnect);
+winrt::fire_and_forget ConnectDevice(DevicePicker, DeviceInformation, bool isAutoReconnect);
 void QueueAutoReconnect(std::wstring_view deviceId);
 winrt::fire_and_forget ScheduleAutoReconnect(std::wstring deviceId);
 void SetupDevicePicker();
@@ -135,6 +136,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
 				g_pendingReconnectDevices.clear();
 				g_autoReconnectSuppressedDevices.clear();
+				g_autoReconnectRefreshPendingDevices.clear();
+				g_autoReconnectRefreshInProgressDevices.clear();
 				connectionsToClose.reserve(g_audioPlaybackConnections.size());
 				for (const auto& connection : g_audioPlaybackConnections)
 				{
@@ -232,7 +235,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		{
 			for (const auto& i : g_lastDevices)
 			{
-				ConnectDevice(g_devicePicker, i);
+				ConnectDevice(g_devicePicker, i, true);
 			}
 			g_lastDevices.clear();
 		}
@@ -244,7 +247,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		{
 			if (!g_isShuttingDown.load() && g_reconnect)
 			{
-				ConnectDevice(g_devicePicker, *deviceId);
+				ConnectDevice(g_devicePicker, *deviceId, true);
 			}
 			delete deviceId;
 		}
@@ -377,6 +380,8 @@ void SetupMenu()
 			self.Icon(reconnectUncheckedIcon);
 			std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
 			g_pendingReconnectDevices.clear();
+			g_autoReconnectRefreshPendingDevices.clear();
+			g_autoReconnectRefreshInProgressDevices.clear();
 		}
 		SaveSettings();
 	});
@@ -501,25 +506,33 @@ winrt::fire_and_forget ScheduleAutoReconnect(std::wstring deviceId)
 	}
 }
 
-winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation device)
+winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation device, bool isAutoReconnect)
 {
 	const std::wstring deviceId(device.Id());
 	picker.SetDisplayStatus(device, _(L"Connecting"), DevicePickerDisplayStatusOptions::ShowProgress | DevicePickerDisplayStatusOptions::ShowDisconnectButton);
 
 	bool success = false;
+	bool shouldForceRefreshReconnect = false;
 	std::wstring errorMessage;
+	AudioPlaybackConnection openedConnection{ nullptr };
 
 	try
 	{
 		auto connection = AudioPlaybackConnection::TryCreateFromId(device.Id());
 		if (connection)
 		{
+			openedConnection = connection;
 			AudioPlaybackConnection previousConnection{ nullptr };
 			bool hasPreviousConnection = false;
 			{
 				std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
 				g_autoReconnectSuppressedDevices.erase(deviceId);
 				g_pendingReconnectDevices.erase(deviceId);
+				if (!isAutoReconnect)
+				{
+					g_autoReconnectRefreshPendingDevices.erase(deviceId);
+					g_autoReconnectRefreshInProgressDevices.erase(deviceId);
+				}
 
 				auto it = g_audioPlaybackConnections.find(deviceId);
 				if (it != g_audioPlaybackConnections.end())
@@ -551,6 +564,11 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 						{
 							deviceToUpdate = it->second.first;
 							g_audioPlaybackConnections.erase(it);
+							const bool isRefreshClose = g_autoReconnectRefreshInProgressDevices.erase(closedDeviceId) > 0;
+							if (!isRefreshClose)
+							{
+								g_autoReconnectRefreshPendingDevices.insert(closedDeviceId);
+							}
 							removedTrackedConnection = true;
 						}
 					}
@@ -576,6 +594,11 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 			{
 			case AudioPlaybackConnectionOpenResultStatus::Success:
 				success = true;
+				if (isAutoReconnect)
+				{
+					std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
+					shouldForceRefreshReconnect = g_autoReconnectRefreshPendingDevices.erase(deviceId) > 0;
+				}
 				break;
 			case AudioPlaybackConnectionOpenResultStatus::RequestTimedOut:
 				success = false;
@@ -619,6 +642,21 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 
 	if (success)
 	{
+		if (isAutoReconnect && shouldForceRefreshReconnect)
+		{
+			{
+				std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
+				g_autoReconnectRefreshInProgressDevices.insert(deviceId);
+			}
+			picker.SetDisplayStatus(device, _(L"Connecting"), DevicePickerDisplayStatusOptions::ShowProgress | DevicePickerDisplayStatusOptions::ShowDisconnectButton);
+			if (openedConnection)
+			{
+				openedConnection.Close();
+			}
+			UpdateNotifyIcon();
+			co_return;
+		}
+
 		picker.SetDisplayStatus(device, _(L"Connected"), DevicePickerDisplayStatusOptions::ShowDisconnectButton);
 		UpdateNotifyIcon();
 	}
@@ -646,10 +684,10 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 	}
 }
 
-winrt::fire_and_forget ConnectDevice(DevicePicker picker, std::wstring_view deviceId)
+winrt::fire_and_forget ConnectDevice(DevicePicker picker, std::wstring_view deviceId, bool isAutoReconnect)
 {
 	auto device = co_await DeviceInformation::CreateFromIdAsync(deviceId);
-	ConnectDevice(picker, device);
+	ConnectDevice(picker, device, isAutoReconnect);
 }
 
 void SetupDevicePicker()
@@ -662,7 +700,7 @@ void SetupDevicePicker()
 		SetWindowPos(g_hWnd, nullptr, 0, 0, 0, 0, SWP_NOZORDER | SWP_HIDEWINDOW);
 	});
 	g_devicePicker.DeviceSelected([](const auto& sender, const auto& args) {
-		ConnectDevice(sender, args.SelectedDevice());
+		ConnectDevice(sender, args.SelectedDevice(), false);
 	});
 	g_devicePicker.DisconnectButtonClicked([](const auto& sender, const auto& args) {
 		auto device = args.Device();
@@ -673,6 +711,8 @@ void SetupDevicePicker()
 			std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
 			g_autoReconnectSuppressedDevices.insert(deviceId);
 			g_pendingReconnectDevices.erase(deviceId);
+			g_autoReconnectRefreshPendingDevices.erase(deviceId);
+			g_autoReconnectRefreshInProgressDevices.erase(deviceId);
 			auto it = g_audioPlaybackConnections.find(deviceId);
 			if (it != g_audioPlaybackConnections.end())
 			{
