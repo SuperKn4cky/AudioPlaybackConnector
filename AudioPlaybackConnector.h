@@ -15,6 +15,7 @@ namespace fs = std::filesystem;
 
 constexpr UINT WM_NOTIFYICON = WM_APP + 1;
 constexpr UINT WM_CONNECTDEVICE = WM_APP + 2;
+constexpr UINT WM_AUTORECONNECTDEVICE = WM_APP + 3;
 
 HANDLE g_hMutex = nullptr;
 HINSTANCE g_hInst;
@@ -28,6 +29,9 @@ DevicePicker g_devicePicker = nullptr;
 std::unordered_map<std::wstring, std::pair<DeviceInformation, AudioPlaybackConnection>> g_audioPlaybackConnections;
 // Accessed from UI handlers and async callbacks; keep map operations synchronized.
 std::mutex g_audioPlaybackConnectionsMutex;
+std::unordered_set<std::wstring> g_pendingReconnectDevices;
+std::unordered_set<std::wstring> g_autoReconnectSuppressedDevices;
+std::atomic_bool g_isShuttingDown = false;
 HICON g_hIconConnected = nullptr;
 HICON g_hIconDisconnected = nullptr;
 NOTIFYICONDATAW g_nid = {
@@ -43,6 +47,7 @@ UINT WM_TASKBAR_CREATED = 0;
 bool g_reconnect = false;
 bool g_showNotification = true;
 std::vector<std::wstring> g_lastDevices;
+CheckBox g_exitReconnectCheckbox = nullptr;
 
 #include "Util.hpp"
 #include "I18n.hpp"

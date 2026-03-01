@@ -35,9 +35,13 @@
 #include <cstdlib>
 #include <cstdint>
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <new>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <filesystem>
 
 // wil

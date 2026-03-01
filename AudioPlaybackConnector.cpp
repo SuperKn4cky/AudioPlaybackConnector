@@ -6,6 +6,8 @@ LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 void SetupFlyout();
 void SetupMenu();
 winrt::fire_and_forget ConnectDevice(DevicePicker, std::wstring_view);
+void QueueAutoReconnect(std::wstring_view deviceId);
+winrt::fire_and_forget ScheduleAutoReconnect(std::wstring deviceId);
 void SetupDevicePicker();
 void SetupSvgIcon();
 void UpdateNotifyIcon();
@@ -126,9 +128,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 	case WM_DESTROY:
 		{
+			g_isShuttingDown = true;
+
 			std::vector<std::pair<DeviceInformation, AudioPlaybackConnection>> connectionsToClose;
 			{
 				std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
+				g_pendingReconnectDevices.clear();
+				g_autoReconnectSuppressedDevices.clear();
 				connectionsToClose.reserve(g_audioPlaybackConnections.size());
 				for (const auto& connection : g_audioPlaybackConnections)
 				{
@@ -231,6 +237,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			g_lastDevices.clear();
 		}
 		break;
+	case WM_AUTORECONNECTDEVICE:
+	{
+		auto deviceId = reinterpret_cast<std::wstring*>(lParam);
+		if (deviceId)
+		{
+			if (!g_isShuttingDown.load() && g_reconnect)
+			{
+				ConnectDevice(g_devicePicker, *deviceId);
+			}
+			delete deviceId;
+		}
+	}
+	break;
 	default:
 		if (WM_TASKBAR_CREATED && message == WM_TASKBAR_CREATED)
 		{
@@ -247,9 +266,9 @@ void SetupFlyout()
 	textBlock.Text(_(L"All connections will be closed.\nExit anyway?"));
 	textBlock.Margin({ 0, 0, 0, 12 });
 
-	static CheckBox checkbox;
-	checkbox.IsChecked(g_reconnect);
-	checkbox.Content(winrt::box_value(_(L"Reconnect on next start")));
+	g_exitReconnectCheckbox = CheckBox();
+	g_exitReconnectCheckbox.IsChecked(g_reconnect);
+	g_exitReconnectCheckbox.Content(winrt::box_value(_(L"Auto reconnect")));
 
 	Button button;
 	button.Content(winrt::box_value(_(L"Exit")));
@@ -258,14 +277,15 @@ void SetupFlyout()
 	button.Margin({ 0, 8, 0, 0 });
 	button.HorizontalAlignment(HorizontalAlignment::Right);
 	button.Click([](const auto&, const auto&) {
-		g_reconnect = checkbox.IsChecked().Value();
+		g_reconnect = g_exitReconnectCheckbox.IsChecked().Value();
+		SaveSettings();
 		PostMessageW(g_hWnd, WM_CLOSE, 0, 0);
 	});
 
 	StackPanel stackPanel;
 	stackPanel.Padding({ 12, 12, 12, 12 });
 	stackPanel.Children().Append(textBlock);
-	stackPanel.Children().Append(checkbox);
+	stackPanel.Children().Append(g_exitReconnectCheckbox);
 	stackPanel.Children().Append(button);
 
 	Flyout flyout;
@@ -334,6 +354,33 @@ void SetupMenu()
 		SaveSettings();
 	});
 
+	FontIcon reconnectCheckedIcon, reconnectUncheckedIcon;
+	reconnectCheckedIcon.Glyph(L"\xE73E");
+
+	MenuFlyoutItem autoReconnectItem;
+	autoReconnectItem.Text(_(L"Auto reconnect"));
+	if (g_reconnect) {
+		autoReconnectItem.Icon(reconnectCheckedIcon);
+	}
+	else {
+		autoReconnectItem.Icon(reconnectUncheckedIcon);
+	}
+	autoReconnectItem.Click([reconnectCheckedIcon, reconnectUncheckedIcon](const auto& sender, const auto&) {
+		MenuFlyoutItem self = sender.as<MenuFlyoutItem>();
+		g_reconnect = !g_reconnect;
+		if (g_reconnect) {
+			self.Icon(reconnectCheckedIcon);
+			std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
+			g_autoReconnectSuppressedDevices.clear();
+		}
+		else {
+			self.Icon(reconnectUncheckedIcon);
+			std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
+			g_pendingReconnectDevices.clear();
+		}
+		SaveSettings();
+	});
+
 	FontIcon closeIcon;
 	closeIcon.Glyph(L"\xE8BB");
 
@@ -366,6 +413,10 @@ void SetupMenu()
 		SetWindowPos(g_hWnd, HWND_TOPMOST, iconRect.left, iconRect.top, 0, 0, SWP_HIDEWINDOW);
 		g_xamlCanvas.Width(static_cast<float>((iconRect.right - iconRect.left) * USER_DEFAULT_SCREEN_DPI / dpi));
 		g_xamlCanvas.Height(static_cast<float>((iconRect.bottom - iconRect.top) * USER_DEFAULT_SCREEN_DPI / dpi));
+		if (g_exitReconnectCheckbox)
+		{
+			g_exitReconnectCheckbox.IsChecked(g_reconnect);
+		}
 
 		g_xamlFlyout.ShowAt(g_xamlCanvas);
 	});
@@ -374,6 +425,7 @@ void SetupMenu()
 	menu.Items().Append(settingsItem);
 	menu.Items().Append(startupItem);
 	menu.Items().Append(notificationItem);
+	menu.Items().Append(autoReconnectItem);
 	menu.Items().Append(exitItem);
 	menu.Opened([](const auto& sender, const auto&) {
 		auto menuItems = sender.as<MenuFlyout>().Items();
@@ -391,8 +443,67 @@ void SetupMenu()
 	g_xamlMenu = menu;
 }
 
+void QueueAutoReconnect(std::wstring_view deviceId)
+{
+	if (!g_reconnect || g_isShuttingDown.load())
+	{
+		return;
+	}
+
+	const std::wstring ownedDeviceId(deviceId);
+	bool shouldSchedule = false;
+	{
+		std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
+		if (g_audioPlaybackConnections.find(ownedDeviceId) == g_audioPlaybackConnections.end() &&
+			g_autoReconnectSuppressedDevices.find(ownedDeviceId) == g_autoReconnectSuppressedDevices.end())
+		{
+			shouldSchedule = g_pendingReconnectDevices.emplace(ownedDeviceId).second;
+		}
+	}
+
+	if (shouldSchedule)
+	{
+		ScheduleAutoReconnect(ownedDeviceId);
+	}
+}
+
+winrt::fire_and_forget ScheduleAutoReconnect(std::wstring deviceId)
+{
+	co_await winrt::resume_after(std::chrono::seconds(3));
+
+	bool shouldReconnect = false;
+	{
+		std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
+		g_pendingReconnectDevices.erase(deviceId);
+
+		if (!g_isShuttingDown.load() &&
+			g_reconnect &&
+			g_audioPlaybackConnections.find(deviceId) == g_audioPlaybackConnections.end() &&
+			g_autoReconnectSuppressedDevices.find(deviceId) == g_autoReconnectSuppressedDevices.end())
+		{
+			shouldReconnect = true;
+		}
+	}
+
+	if (shouldReconnect)
+	{
+		auto payload = new (std::nothrow) std::wstring(deviceId);
+		if (!payload)
+		{
+			co_return;
+		}
+
+		if (!PostMessageW(g_hWnd, WM_AUTORECONNECTDEVICE, 0, reinterpret_cast<LPARAM>(payload)))
+		{
+			delete payload;
+			LOG_LAST_ERROR();
+		}
+	}
+}
+
 winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation device)
 {
+	const std::wstring deviceId(device.Id());
 	picker.SetDisplayStatus(device, _(L"Connecting"), DevicePickerDisplayStatusOptions::ShowProgress | DevicePickerDisplayStatusOptions::ShowDisconnectButton);
 
 	bool success = false;
@@ -403,23 +514,49 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 		auto connection = AudioPlaybackConnection::TryCreateFromId(device.Id());
 		if (connection)
 		{
+			AudioPlaybackConnection previousConnection{ nullptr };
+			bool hasPreviousConnection = false;
 			{
 				std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
-				g_audioPlaybackConnections.emplace(device.Id(), std::pair(device, connection));
+				g_autoReconnectSuppressedDevices.erase(deviceId);
+				g_pendingReconnectDevices.erase(deviceId);
+
+				auto it = g_audioPlaybackConnections.find(deviceId);
+				if (it != g_audioPlaybackConnections.end())
+				{
+					previousConnection = it->second.second;
+					g_audioPlaybackConnections.erase(it);
+					hasPreviousConnection = true;
+				}
+
+				g_audioPlaybackConnections.emplace(deviceId, std::pair(device, connection));
+			}
+
+			// Ensure a clean reopen for devices that reconnect after link loss.
+			if (hasPreviousConnection)
+			{
+				previousConnection.Close();
 			}
 
 			connection.StateChanged([](const auto& sender, const auto&) {
 				if (sender.State() == AudioPlaybackConnectionState::Closed)
 				{
+					const std::wstring closedDeviceId(sender.DeviceId());
 					std::optional<DeviceInformation> deviceToUpdate;
+					bool removedTrackedConnection = false;
 					{
 						std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
-						auto it = g_audioPlaybackConnections.find(std::wstring(sender.DeviceId()));
-						if (it != g_audioPlaybackConnections.end())
+						auto it = g_audioPlaybackConnections.find(closedDeviceId);
+						if (it != g_audioPlaybackConnections.end() && it->second.second == sender)
 						{
 							deviceToUpdate = it->second.first;
 							g_audioPlaybackConnections.erase(it);
+							removedTrackedConnection = true;
 						}
+					}
+					if (!removedTrackedConnection)
+					{
+						return;
 					}
 					if (deviceToUpdate)
 					{
@@ -428,6 +565,7 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 					// Note: sender.Close() removed here as it's already closed when state is Closed
 					// Calling Close() again could cause issues. Cleanup happens via erase above.
 					UpdateNotifyIcon();
+					QueueAutoReconnect(closedDeviceId);
 				}
 			});
 
@@ -490,7 +628,7 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 		bool hasConnection = false;
 		{
 			std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
-			auto it = g_audioPlaybackConnections.find(std::wstring(device.Id()));
+			auto it = g_audioPlaybackConnections.find(deviceId);
 			if (it != g_audioPlaybackConnections.end())
 			{
 				connectionToClose = it->second.second;
@@ -504,6 +642,7 @@ winrt::fire_and_forget ConnectDevice(DevicePicker picker, DeviceInformation devi
 		}
 		picker.SetDisplayStatus(device, errorMessage, DevicePickerDisplayStatusOptions::ShowRetryButton);
 		UpdateNotifyIcon();
+		QueueAutoReconnect(deviceId);
 	}
 }
 
@@ -527,11 +666,14 @@ void SetupDevicePicker()
 	});
 	g_devicePicker.DisconnectButtonClicked([](const auto& sender, const auto& args) {
 		auto device = args.Device();
+		const std::wstring deviceId(device.Id());
 		AudioPlaybackConnection connectionToClose{ nullptr };
 		bool hasConnection = false;
 		{
 			std::scoped_lock lock(g_audioPlaybackConnectionsMutex);
-			auto it = g_audioPlaybackConnections.find(std::wstring(device.Id()));
+			g_autoReconnectSuppressedDevices.insert(deviceId);
+			g_pendingReconnectDevices.erase(deviceId);
+			auto it = g_audioPlaybackConnections.find(deviceId);
 			if (it != g_audioPlaybackConnections.end())
 			{
 				connectionToClose = it->second.second;

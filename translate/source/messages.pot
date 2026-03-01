@@ -40,6 +40,10 @@ msgstr ""
 msgid "Reconnect on next start"
 msgstr ""
 
+#: AudioPlaybackConnector.cpp:201
+msgid "Auto reconnect"
+msgstr ""
+
 #: AudioPlaybackConnector.cpp:204 AudioPlaybackConnector.cpp:240
 msgid "Exit"
 msgstr ""
